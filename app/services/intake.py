@@ -107,7 +107,8 @@ def checked_value(field: str, text: str) -> tuple[Any, str | None]:
 def review_field(field: str, read: ExtractedField) -> tuple[Any, FieldReport]:
     """Return the value to store for one extracted field, and its field report.
 
-    Missing, illegible, ambiguous and conflicting readings store nothing. A reading that fails a
+    Missing (null or blank), illegible, ambiguous and conflicting readings store nothing, so a
+    reply of empty strings ends as "no fields found". A reading that fails a
     check stores nothing either, and its report keeps the value as read with the reason.
     """
     value, status, reason = None, FieldStatus.OK, None
@@ -115,7 +116,7 @@ def review_field(field: str, read: ExtractedField) -> tuple[Any, FieldReport]:
         status, reason = FieldStatus.CONFLICT, "the document gives different values"
     elif read.issue != "none":
         status, reason = FieldStatus.MISSING, f"the value is {read.issue}"
-    elif read.value is None:
+    elif read.value is None or not read.value.strip():
         status, reason = FieldStatus.MISSING, "not found in the document"
     else:
         value, reason = checked_value(field, read.value.strip())

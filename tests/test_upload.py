@@ -125,6 +125,7 @@ def test_value_that_fails_a_check_is_reported_but_not_stored(
     ("extracted", "status", "reason"),
     [
         (read(None), "missing", "not found in the document"),
+        (read(" "), "missing", "not found in the document"),
         (read("Lovel?ce", "illegible"), "missing", "the value is illegible"),
         (read("Lovelace or Byron", "ambiguous"), "missing", "the value is ambiguous"),
         (read(None, "conflicting"), "conflict", "the document gives different values"),
@@ -207,11 +208,12 @@ def test_overlong_name_is_invalid(client: TestClient, alice: Headers) -> None:
     assert report["reason"] == "String should have at most 100 characters"
 
 
+@pytest.mark.parametrize("empty", [None, "", "   "])
 def test_document_with_no_fields_is_rejected_and_not_saved(
-    client: TestClient, alice: Headers
+    client: TestClient, alice: Headers, empty: str | None
 ) -> None:
-    """Expect a 422 and no order when nothing was found."""
-    nothing = {field: read(None) for field in ExtractedOrder.model_fields}
+    """Expect a 422 and no order when every field is null or blank."""
+    nothing = {field: read(empty) for field in ExtractedOrder.model_fields}
     use_extractor(ExtractedOrder(**nothing))
 
     response = upload(client, alice)
