@@ -1,3 +1,4 @@
+import secrets
 import uuid
 from datetime import UTC, datetime, timedelta
 
@@ -14,6 +15,8 @@ from app.models import User
 ACCESS_TOKEN_LIFETIME = timedelta(minutes=60)
 JWT_ALGORITHM = "HS256"
 password_hasher = PasswordHasher()
+# Checked when the email is unknown, so that login takes as long as for a wrong password
+UNKNOWN_USER_HASH = password_hasher.hash(secrets.token_urlsafe(16))
 
 
 class EmailTaken(Exception):
@@ -33,10 +36,8 @@ def register_user(db: Session, email: str, password: str) -> User:
 
 def authenticate(db: Session, email: str, password: str) -> User | None:
     user = db.scalar(select(User).where(User.email == email.lower()))
-    if user is None:
-        return None
     try:
-        password_hasher.verify(user.password_hash, password)
+        password_hasher.verify(user.password_hash if user else UNKNOWN_USER_HASH, password)
     except VerifyMismatchError:
         return None
     return user

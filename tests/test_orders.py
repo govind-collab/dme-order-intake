@@ -45,6 +45,10 @@ def test_order_with_missing_fields_needs_review(client: TestClient, alice: Heade
         ("patient_dob", "2999-01-01"),
         ("patient_dob", "1850-01-01"),
         ("patient_dob", "2023-02-30"),
+        ("patient_dob", 0),
+        ("patient_dob", 503020800),
+        ("patient_dob", "1985-12-10T00:00:00"),
+        ("patient_dob", "12/10/1985"),
         ("patient_first_name", "Ada2"),
         ("patient_last_name", "Unknown"),
         ("patient_first_name", "A" * 101),
@@ -53,7 +57,7 @@ def test_order_with_missing_fields_needs_review(client: TestClient, alice: Heade
     ],
 )
 def test_invalid_value_is_rejected_and_nothing_saved(
-    client: TestClient, alice: Headers, field: str, value: str
+    client: TestClient, alice: Headers, field: str, value: object
 ) -> None:
     response = client.post("/orders", json={**VALID_ORDER, field: value}, headers=alice)
 

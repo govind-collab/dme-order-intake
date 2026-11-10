@@ -2,12 +2,15 @@ import uuid
 from datetime import UTC, datetime, timedelta
 
 import jwt
+import pytest
+from argon2.exceptions import VerifyMismatchError
 from fastapi.testclient import TestClient
 from httpx2 import Response
 
 from app.config import settings
 from app.db import SessionLocal
-from app.services.auth import create_access_token, user_from_token
+from app.services import auth
+from app.services.auth import authenticate, create_access_token, user_from_token
 
 PASSWORD = "correct horse battery"
 
@@ -56,6 +59,27 @@ def test_token_refused_for_wrong_password(client: TestClient) -> None:
 
 def test_token_refused_for_unknown_email(client: TestClient) -> None:
     assert login(client, "nobody@example.com").status_code == 401
+
+
+class CountingHasher:
+    def __init__(self) -> None:
+        self.verified = 0
+
+    def verify(self, password_hash: str, password: str) -> bool:
+        self.verified += 1
+        raise VerifyMismatchError
+
+
+def test_unknown_email_still_runs_one_password_check(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    hasher = CountingHasher()
+    monkeypatch.setattr(auth, "password_hasher", hasher)
+
+    with SessionLocal() as db:
+        assert authenticate(db, "nobody@example.com", PASSWORD) is None
+
+    assert hasher.verified == 1
 
 
 def test_token_resolves_to_its_user(client: TestClient) -> None:

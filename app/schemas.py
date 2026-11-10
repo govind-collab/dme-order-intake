@@ -1,9 +1,10 @@
+import re
 import uuid
 from collections.abc import Callable
 from datetime import date, datetime
 from typing import Annotated
 
-from pydantic import AfterValidator, BaseModel, ConfigDict, StringConstraints
+from pydantic import AfterValidator, BaseModel, BeforeValidator, ConfigDict, StringConstraints
 
 from app.checks import dob_problem, name_problem, npi_problem
 from app.models import FieldStatus, OrderSource, OrderStatus
@@ -34,7 +35,21 @@ ProviderName = Annotated[
 Npi = Annotated[
     str, StringConstraints(strip_whitespace=True, max_length=10), rejected_by(npi_problem)
 ]
-BirthDate = Annotated[date, rejected_by(lambda dob: dob_problem(dob, date.today()))]
+
+
+def iso_date_only(value: object) -> object:
+    if isinstance(value, date) or (
+        isinstance(value, str) and re.fullmatch(r"\d{4}-\d{2}-\d{2}", value)
+    ):
+        return value
+    raise ValueError("date must be a YYYY-MM-DD string")
+
+
+BirthDate = Annotated[
+    date,
+    BeforeValidator(iso_date_only),
+    rejected_by(lambda dob: dob_problem(dob, date.today())),
+]
 
 
 class UserCreate(BaseModel):
