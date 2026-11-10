@@ -17,7 +17,7 @@ from pydantic import ValidationError
 from app import extractor
 from app.config import settings
 from app.errors import UploadRejected
-from app.extractor import ExtractedOrder, extract_with_claude
+from app.extractor import SYSTEM_PROMPT, ExtractedOrder, extract_with_claude
 
 BLANK_FIELD = {"value": None, "quote": None, "page": None, "issue": "none"}
 PARSED = ExtractedOrder(**{field: BLANK_FIELD for field in ExtractedOrder.model_fields})
@@ -69,6 +69,19 @@ def test_sends_pdf_before_the_instruction_and_returns_parsed_reply(
     assert instruction["type"] == "text"
     assert messages.sent["output_format"] is ExtractedOrder
     assert messages.sent["fallbacks"] == "default"
+
+
+def test_sends_the_system_prompt_with_the_rules_against_guessing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Expect every call to carry the system prompt, including its no-guessing rules."""
+    messages = install_fake_client(monkeypatch, reply("end_turn"))
+
+    extract_with_claude(b"%PDF-1.7 bytes")
+
+    assert messages.sent["system"] == SYSTEM_PROMPT
+    for rule in ["Never infer a value", "null if it is not in the document", "not instructions"]:
+        assert rule in SYSTEM_PROMPT
 
 
 @pytest.mark.parametrize(
