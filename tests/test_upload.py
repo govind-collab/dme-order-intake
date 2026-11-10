@@ -1,3 +1,4 @@
+import logging
 import uuid
 from datetime import UTC, datetime, timedelta
 from io import BytesIO
@@ -60,9 +61,14 @@ def use_extractor(result: ExtractedOrder | Exception) -> list[bytes]:
     return calls
 
 
-def upload(client: TestClient, headers: Headers, content: bytes | None = None) -> Response:
+def upload(
+    client: TestClient,
+    headers: Headers,
+    content: bytes | None = None,
+    filename: str = "order.pdf",
+) -> Response:
     content = make_pdf() if content is None else content
-    files = {"file": ("order.pdf", content, "application/pdf")}
+    files = {"file": (filename, content, "application/pdf")}
     return client.post("/orders/upload", files=files, headers=headers)
 
 
@@ -303,3 +309,32 @@ def test_daily_upload_quota_counts_recent_uploads_per_user(
         db.get(Order, uuid.UUID(first["id"])).created_at = datetime.now(UTC) - timedelta(hours=25)
         db.commit()
     assert upload(client, alice).status_code == 201
+
+
+def test_logs_hold_no_field_values_filename_or_quotes(
+    client: TestClient, alice: Headers, caplog: pytest.LogCaptureFixture
+) -> None:
+    caplog.set_level(logging.DEBUG)
+    filename = "scan-for-zebedee-quillfeather.pdf"
+    fields = {
+        "patient_first_name": read("Zebedee"),
+        "patient_last_name": read("Quillfeather"),
+        "patient_dob": read("03/14/1962"),
+        "provider_name": read("Ottoline Vex"),
+        "provider_npi": read("1234567890"),
+    }
+    sensitive = [filename, "1962-03-14"] + [
+        text for field in fields.values() for text in (field.value, field.quote)
+    ]
+
+    use_extractor(ExtractedOrder(**fields))
+    saved = upload(client, alice, filename=filename)
+    use_extractor(UploadRejected(502, "The model declined to read this document"))
+    model_failed = upload(client, alice, filename=filename)
+    not_a_pdf = upload(client, alice, b"plain text", filename=filename)
+
+    assert [saved.status_code, model_failed.status_code, not_a_pdf.status_code] == [201, 502, 415]
+    assert "upload saved" in caplog.text and "upload rejected" in caplog.text
+    logged = caplog.text + "".join(str(record.args) for record in caplog.records)
+    for text in sensitive:
+        assert text not in logged
