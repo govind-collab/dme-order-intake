@@ -3,7 +3,10 @@ target-version = "py313"
 line-length = 100
 
 [tool.ruff.lint]
-select = ["E", "F", "I", "B", "UP", "ANN"]
+select = ["E", "F", "I", "B", "UP", "ANN", "D"]
+
+[tool.ruff.lint.pydocstyle]
+convention = "numpy"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

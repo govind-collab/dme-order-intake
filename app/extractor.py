@@ -1,3 +1,9 @@
+"""The single Claude API call that reads order fields from a PDF.
+
+Owns the system prompt, the strict reply model, the API client and the mapping of API failures to
+upload errors. It is the only module that talks to Claude, so tests fake it.
+"""
+
 import base64
 import logging
 import time
@@ -43,6 +49,12 @@ logger = logging.getLogger(__name__)
 
 
 class ExtractedField(BaseModel):
+    """One field as the model read it, before any check.
+
+    `value` is the text as printed, or null. `quote` and `page` show where it came from, and
+    `issue` flags text that is illegible, conflicting or ambiguous.
+    """
+
     model_config = ConfigDict(extra="forbid", strict=True)
 
     value: str | None
@@ -52,6 +64,12 @@ class ExtractedField(BaseModel):
 
 
 class ExtractedOrder(BaseModel):
+    """The model's reply: one ExtractedField per order field.
+
+    Strict and closed: an extra key, a coerced type or an unknown issue value fails validation,
+    and the upload then fails as a model error instead of saving a half-filled order.
+    """
+
     model_config = ConfigDict(extra="forbid", strict=True)
 
     patient_first_name: ExtractedField
@@ -66,6 +84,11 @@ Extractor = Callable[[bytes], ExtractedOrder]
 
 @cache
 def claude_client() -> anthropic.Anthropic:
+    """Return the shared Anthropic client, built on first use.
+
+    Raises UploadRejected (503) when no API key is configured. The 120-second timeout with one
+    retry keeps a stuck call far under Render's request limit.
+    """
     if settings.anthropic_api_key is None:
         raise UploadRejected(503, "Extraction is not configured")
     return anthropic.Anthropic(
@@ -76,6 +99,13 @@ def claude_client() -> anthropic.Anthropic:
 
 
 def extract_with_claude(pdf: bytes) -> ExtractedOrder:
+    """Return the order fields Claude reads from a PDF.
+
+    The PDF goes in as a base64 document block ahead of the instruction, and the reply is parsed
+    into ExtractedOrder. Raises UploadRejected: 503 when the API is unreachable, rate limited or
+    overloaded, which is safe to retry, and 502 when the request is rejected, the model refuses,
+    the reply is cut off or it does not match the reply model.
+    """
     client = claude_client()
     document = {
         "type": "document",

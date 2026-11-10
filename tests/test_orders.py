@@ -1,3 +1,9 @@
+"""Tests for manual orders and isolation between users.
+
+Owns the checks on stored values and status, every 422 for bad values and paging, PATCH and DELETE,
+and that another user's order is invisible on every endpoint.
+"""
+
 import uuid
 from typing import Any
 
@@ -16,12 +22,14 @@ VALID_ORDER = {
 
 
 def create(client: TestClient, headers: Headers, values: dict[str, Any] = VALID_ORDER) -> dict:
+    """Create an order for these headers, assert a 201 and return its JSON."""
     response = client.post("/orders", json=values, headers=headers)
     assert response.status_code == 201
     return response.json()
 
 
 def test_order_with_all_fields_is_complete(client: TestClient, alice: Headers) -> None:
+    """Expect status complete, source manual and the values as sent."""
     order = create(client, alice)
 
     assert order["status"] == "complete"
@@ -30,6 +38,7 @@ def test_order_with_all_fields_is_complete(client: TestClient, alice: Headers) -
 
 
 def test_order_with_missing_fields_needs_review(client: TestClient, alice: Headers) -> None:
+    """Expect needs_review, with the status the client sent ignored."""
     order = create(client, alice, {"patient_first_name": "Ada", "status": "complete"})
 
     assert order["status"] == "needs_review"
@@ -59,6 +68,7 @@ def test_order_with_missing_fields_needs_review(client: TestClient, alice: Heade
 def test_invalid_value_is_rejected_and_nothing_saved(
     client: TestClient, alice: Headers, field: str, value: object
 ) -> None:
+    """Expect a 422 naming the field for each bad value, and no order saved."""
     response = client.post("/orders", json={**VALID_ORDER, field: value}, headers=alice)
 
     assert response.status_code == 422
@@ -67,6 +77,7 @@ def test_invalid_value_is_rejected_and_nothing_saved(
 
 
 def test_rejection_gives_the_reason_without_the_value(client: TestClient, alice: Headers) -> None:
+    """Expect the check-digit reason in the 422, but neither the NPI nor a long name."""
     marker = "MARKER" * 20
     bad_npi = client.post(
         "/orders", json={**VALID_ORDER, "provider_npi": "1234567890"}, headers=alice
@@ -79,6 +90,7 @@ def test_rejection_gives_the_reason_without_the_value(client: TestClient, alice:
 
 
 def test_list_returns_own_orders_newest_first(client: TestClient, alice: Headers) -> None:
+    """Expect the newer order first."""
     first = create(client, alice)
     second = create(client, alice, {"patient_first_name": "Ada"})
 
@@ -88,6 +100,7 @@ def test_list_returns_own_orders_newest_first(client: TestClient, alice: Headers
 
 
 def test_list_filters_by_status_and_pages(client: TestClient, alice: Headers) -> None:
+    """Expect the status filter, limit and offset to pick the right orders."""
     complete = create(client, alice)
     create(client, alice, {"patient_first_name": "Ada"})
     create(client, alice, {"patient_first_name": "Ada"})
@@ -106,12 +119,14 @@ def test_list_filters_by_status_and_pages(client: TestClient, alice: Headers) ->
 def test_list_rejects_out_of_range_paging(
     client: TestClient, alice: Headers, params: dict[str, Any]
 ) -> None:
+    """Expect a 422 for limits outside 1-100, bad offsets and unknown statuses."""
     assert client.get("/orders", params=params, headers=alice).status_code == 422
 
 
 def test_patch_updates_sent_fields_and_recomputes_status(
     client: TestClient, alice: Headers
 ) -> None:
+    """Expect only the fields sent to change, and the status to follow."""
     order = create(client, alice, {"patient_first_name": "Ada"})
     url = f"/orders/{order['id']}"
 
@@ -128,6 +143,7 @@ def test_patch_updates_sent_fields_and_recomputes_status(
 
 
 def test_patch_with_invalid_value_changes_nothing(client: TestClient, alice: Headers) -> None:
+    """Expect a 422 and the stored value unchanged."""
     order = create(client, alice)
     url = f"/orders/{order['id']}"
 
@@ -138,6 +154,7 @@ def test_patch_with_invalid_value_changes_nothing(client: TestClient, alice: Hea
 
 
 def test_delete_removes_order(client: TestClient, alice: Headers) -> None:
+    """Expect a 204 and then a 404."""
     url = f"/orders/{create(client, alice)['id']}"
 
     assert client.delete(url, headers=alice).status_code == 204
@@ -147,6 +164,7 @@ def test_delete_removes_order(client: TestClient, alice: Headers) -> None:
 def test_other_users_order_is_not_found_on_read_update_delete(
     client: TestClient, alice: Headers, bob: Headers
 ) -> None:
+    """Expect another user's order to answer 404 like an unknown id, and stay untouched."""
     url = f"/orders/{create(client, alice)['id']}"
     unknown_url = f"/orders/{uuid.uuid4()}"
 
@@ -163,6 +181,7 @@ def test_other_users_order_is_not_found_on_read_update_delete(
 
 
 def test_list_shows_only_own_orders(client: TestClient, alice: Headers, bob: Headers) -> None:
+    """Expect each user's list to hold only their own orders."""
     alice_ids = {create(client, alice)["id"], create(client, alice)["id"]}
     bob_ids = {create(client, bob)["id"]}
 
@@ -171,6 +190,7 @@ def test_list_shows_only_own_orders(client: TestClient, alice: Headers, bob: Hea
 
 
 def test_every_orders_endpoint_requires_a_valid_token(client: TestClient, alice: Headers) -> None:
+    """Expect a 401 on every orders endpoint without a token or with a bad one."""
     url = f"/orders/{create(client, alice)['id']}"
     requests = [
         ("POST", "/orders"),
@@ -187,4 +207,5 @@ def test_every_orders_endpoint_requires_a_valid_token(client: TestClient, alice:
 
 
 def test_malformed_order_id_is_422(client: TestClient, alice: Headers) -> None:
+    """Expect a 422 for an order id that is not a UUID."""
     assert client.get("/orders/not-a-uuid", headers=alice).status_code == 422

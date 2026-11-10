@@ -1,3 +1,9 @@
+"""FastAPI application: wiring, error handlers and the health check.
+
+Owns app creation, logging setup, table creation on start, the upload size limit and in-memory
+upload spool, the 422 handler that drops echoed input, the UploadRejected handler and /health.
+"""
+
 import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -25,6 +31,7 @@ MultiPartParser.spool_max_size = MAX_UPLOAD_REQUEST_BYTES
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    """Create any missing tables when the app starts."""
     Base.metadata.create_all(engine)
     yield
 
@@ -39,7 +46,10 @@ app.include_router(orders.router)
 async def validation_error_without_input(
     request: Request, error: RequestValidationError
 ) -> JSONResponse:
-    # Pydantic copies the rejected input into each error, and that input can be patient data
+    """Return a 422 listing each error's type, location and message, without the input.
+
+    Pydantic copies the rejected input into every error, and that input can be patient data.
+    """
     details = [{"type": e["type"], "loc": e["loc"], "msg": e["msg"]} for e in error.errors()]
     return JSONResponse(
         status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, content={"detail": details}
@@ -48,6 +58,7 @@ async def validation_error_without_input(
 
 @app.exception_handler(UploadRejected)
 async def upload_rejected(request: Request, error: UploadRejected) -> JSONResponse:
+    """Return the upload error as JSON and log its status and cause type, never its content."""
     cause = type(error.__cause__).__name__ if error.__cause__ else "none"
     logger.warning("upload rejected status=%d cause=%s", error.status_code, cause)
     return JSONResponse(status_code=error.status_code, content={"detail": error.reason})
@@ -55,6 +66,11 @@ async def upload_rejected(request: Request, error: UploadRejected) -> JSONRespon
 
 @app.get("/health")
 def health(db: DbSession, response: Response) -> dict[str, str]:
+    """Check that the service is up and the database answers.
+
+    Returns `{"status": "ok"}`, or a 503 with `{"status": "database unavailable"}` when the
+    database cannot be reached. Needs no token.
+    """
     try:
         db.execute(text("SELECT 1"))
     except SQLAlchemyError:

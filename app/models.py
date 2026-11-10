@@ -1,3 +1,9 @@
+"""Database tables and the status values stored in them.
+
+Owns the User and Order tables and the enums for order status, order source and field-report status.
+Column types stay portable between SQLite and Postgres.
+"""
+
 import uuid
 from datetime import UTC, date, datetime
 from enum import StrEnum
@@ -8,20 +14,31 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
 def utcnow() -> datetime:
+    """Return the current time in UTC, for timestamp defaults."""
     return datetime.now(UTC)
 
 
 class OrderStatus(StrEnum):
+    """complete when all five fields passed their checks, needs_review otherwise."""
+
     COMPLETE = "complete"
     NEEDS_REVIEW = "needs_review"
 
 
 class OrderSource(StrEnum):
+    """How an order was created: typed in by hand or read from an uploaded PDF."""
+
     MANUAL = "manual"
     UPLOAD = "upload"
 
 
 class FieldStatus(StrEnum):
+    """Outcome for one extracted field.
+
+    ok passed every check, missing was not found or not readable, invalid was read but failed a
+    check, and conflict means the document gives different values.
+    """
+
     OK = "ok"
     MISSING = "missing"
     INVALID = "invalid"
@@ -29,10 +46,14 @@ class FieldStatus(StrEnum):
 
 
 class Base(DeclarativeBase):
+    """Declarative base for all tables."""
+
     pass
 
 
 class User(Base):
+    """An account; each order belongs to exactly one user."""
+
     __tablename__ = "users"
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
@@ -42,6 +63,12 @@ class User(Base):
 
 
 class Order(Base):
+    """One DME order with its five fields, all nullable.
+
+    A field holds a value only when it passed every check. `field_report` keeps, per field, what
+    the document said and why a value was refused; it is null for orders created by hand.
+    """
+
     __tablename__ = "orders"
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)

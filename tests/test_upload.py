@@ -1,3 +1,10 @@
+"""Tests for PDF upload, using a fake extractor so no request leaves the machine.
+
+Owns the checks on how each reading is stored and reported, date and NPI parsing, file rejections
+before the model is called, the quota, PATCH on uploaded orders, privacy between users and log
+hygiene.
+"""
+
 import logging
 import uuid
 from datetime import UTC, datetime, timedelta
@@ -21,6 +28,7 @@ Headers = dict[str, str]
 
 
 def make_pdf(pages: int = 1, password: str | None = None) -> bytes:
+    """Return a blank PDF with this many pages, encrypted when a password is given."""
     writer = PdfWriter()
     for _ in range(pages):
         writer.add_blank_page(width=612, height=792)
@@ -32,12 +40,14 @@ def make_pdf(pages: int = 1, password: str | None = None) -> bytes:
 
 
 def read(value: str | None, issue: str = "none") -> ExtractedField:
+    """Return an extracted field, with a quote and page when there is a value."""
     quote = None if value is None else f"Label: {value}"
     page = None if value is None else 1
     return ExtractedField(value=value, quote=quote, page=page, issue=issue)
 
 
 def reading(**overrides: ExtractedField) -> ExtractedOrder:
+    """Return a clean extraction of all five fields, with some fields replaced."""
     fields = {
         "patient_first_name": read("Ada"),
         "patient_last_name": read("Lovelace"),
@@ -49,9 +59,11 @@ def reading(**overrides: ExtractedField) -> ExtractedOrder:
 
 
 def use_extractor(result: ExtractedOrder | Exception) -> list[bytes]:
+    """Make uploads use a fake extractor with this result and return the PDFs it receives."""
     calls: list[bytes] = []
 
     def fake_extract(pdf: bytes) -> ExtractedOrder:
+        """Record the PDF and return or raise the result."""
         calls.append(pdf)
         if isinstance(result, Exception):
             raise result
@@ -67,12 +79,14 @@ def upload(
     content: bytes | None = None,
     filename: str = "order.pdf",
 ) -> Response:
+    """Upload a PDF, a blank one by default, and return the response."""
     content = make_pdf() if content is None else content
     files = {"file": (filename, content, "application/pdf")}
     return client.post("/orders/upload", files=files, headers=headers)
 
 
 def test_clean_reading_creates_complete_order(client: TestClient, alice: Headers) -> None:
+    """Expect a complete order, every report ok and the exact PDF sent to the extractor."""
     pdf = make_pdf(pages=3)
     calls = use_extractor(reading())
 
@@ -91,6 +105,7 @@ def test_clean_reading_creates_complete_order(client: TestClient, alice: Headers
 def test_value_that_fails_a_check_is_reported_but_not_stored(
     client: TestClient, alice: Headers
 ) -> None:
+    """Expect a null NPI on the order, and the value as read with its reason in the report."""
     use_extractor(reading(provider_npi=read("1234567890")))
 
     order = upload(client, alice).json()
@@ -118,6 +133,7 @@ def test_value_that_fails_a_check_is_reported_but_not_stored(
 def test_unusable_reading_is_not_stored(
     client: TestClient, alice: Headers, extracted: ExtractedField, status: str, reason: str
 ) -> None:
+    """Expect missing, illegible, ambiguous and conflicting readings to store nothing."""
     use_extractor(reading(patient_last_name=extracted))
 
     order = upload(client, alice).json()
@@ -138,6 +154,7 @@ def test_unusable_reading_is_not_stored(
 def test_printed_dates_of_birth_are_parsed_as_us_dates(
     client: TestClient, alice: Headers, printed: str
 ) -> None:
+    """Expect each printed form of 10 December 1985 to be stored as 1985-12-10."""
     use_extractor(reading(patient_dob=read(printed)))
 
     assert upload(client, alice).json()["patient_dob"] == "1985-12-10"
@@ -156,6 +173,7 @@ def test_printed_dates_of_birth_are_parsed_as_us_dates(
 def test_unusable_dates_of_birth_are_rejected_with_reason(
     client: TestClient, alice: Headers, printed: str, reason: str
 ) -> None:
+    """Expect two-digit, impossible, unreadable, future and too-old dates to be refused."""
     use_extractor(reading(patient_dob=read(printed)))
 
     order = upload(client, alice).json()
@@ -166,18 +184,21 @@ def test_unusable_dates_of_birth_are_rejected_with_reason(
 
 @pytest.mark.parametrize("printed", ["1234 567 893", "123-456-7893", " 1234567893 "])
 def test_npi_separators_are_removed(client: TestClient, alice: Headers, printed: str) -> None:
+    """Expect spaces and hyphens in a printed NPI to be dropped."""
     use_extractor(reading(provider_npi=read(printed)))
 
     assert upload(client, alice).json()["provider_npi"] == "1234567893"
 
 
 def test_curly_apostrophe_name_is_kept(client: TestClient, alice: Headers) -> None:
+    """Expect a name with a curly apostrophe to be stored as printed."""
     use_extractor(reading(patient_last_name=read("O’Brien")))
 
     assert upload(client, alice).json()["patient_last_name"] == "O’Brien"
 
 
 def test_overlong_name_is_invalid(client: TestClient, alice: Headers) -> None:
+    """Expect a name over 100 characters to be reported invalid."""
     use_extractor(reading(patient_first_name=read("A" * 101)))
 
     report = upload(client, alice).json()["field_report"]["patient_first_name"]
@@ -189,6 +210,7 @@ def test_overlong_name_is_invalid(client: TestClient, alice: Headers) -> None:
 def test_document_with_no_fields_is_rejected_and_not_saved(
     client: TestClient, alice: Headers
 ) -> None:
+    """Expect a 422 and no order when nothing was found."""
     nothing = {field: read(None) for field in ExtractedOrder.model_fields}
     use_extractor(ExtractedOrder(**nothing))
 
@@ -213,6 +235,7 @@ def test_document_with_no_fields_is_rejected_and_not_saved(
 def test_unusable_files_are_rejected_before_the_model_is_called(
     client: TestClient, alice: Headers, content: bytes, status: int
 ) -> None:
+    """Expect bad files to be refused with the right status and no model call."""
     calls = use_extractor(reading())
 
     response = upload(client, alice, content)
@@ -223,6 +246,7 @@ def test_unusable_files_are_rejected_before_the_model_is_called(
 
 
 def test_request_far_over_the_cap_is_refused(client: TestClient, alice: Headers) -> None:
+    """Expect a 413 from the size limit for a body twice the cap."""
     calls = use_extractor(reading())
 
     response = upload(client, alice, b"%PDF-" + b"0" * (MAX_PDF_BYTES * 2))
@@ -232,6 +256,7 @@ def test_request_far_over_the_cap_is_refused(client: TestClient, alice: Headers)
 
 
 def test_extraction_failure_saves_nothing(client: TestClient, alice: Headers) -> None:
+    """Expect the extractor's error status and no order."""
     use_extractor(UploadRejected(503, "Extraction service is unavailable, try again"))
 
     response = upload(client, alice)
@@ -242,6 +267,7 @@ def test_extraction_failure_saves_nothing(client: TestClient, alice: Headers) ->
 
 
 def test_upload_requires_a_token(client: TestClient) -> None:
+    """Expect a 401 and no model call without a token."""
     calls = use_extractor(reading())
 
     assert upload(client, {}).status_code == 401
@@ -251,6 +277,7 @@ def test_upload_requires_a_token(client: TestClient) -> None:
 def test_uploaded_order_is_private_to_the_uploader(
     client: TestClient, alice: Headers, bob: Headers
 ) -> None:
+    """Expect another user to get a 404 and an empty list."""
     use_extractor(reading())
     order_id = upload(client, alice).json()["id"]
 
@@ -261,6 +288,7 @@ def test_uploaded_order_is_private_to_the_uploader(
 def test_patch_updates_the_field_report_of_the_fixed_field(
     client: TestClient, alice: Headers
 ) -> None:
+    """Expect a fixed field's report to say set by hand, a cleared one cleared by hand."""
     use_extractor(reading(provider_npi=read("1234567890")))
     order = upload(client, alice).json()
     url = f"/orders/{order['id']}"
@@ -281,6 +309,7 @@ def test_patch_updates_the_field_report_of_the_fixed_field(
 
 
 def test_patch_on_manual_order_adds_no_field_report(client: TestClient, alice: Headers) -> None:
+    """Expect a manual order to keep a null field report after PATCH."""
     order = client.post("/orders", json={"patient_first_name": "Ada"}, headers=alice).json()
 
     patched = client.patch(
@@ -293,6 +322,7 @@ def test_patch_on_manual_order_adds_no_field_report(client: TestClient, alice: H
 def test_daily_upload_quota_counts_recent_uploads_per_user(
     client: TestClient, alice: Headers, bob: Headers, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """Expect a 429 past the limit; manual, other users' and day-old uploads don't count."""
     monkeypatch.setattr(intake, "DAILY_UPLOAD_LIMIT", 2)
     calls = use_extractor(reading())
     first = upload(client, alice).json()
@@ -314,6 +344,7 @@ def test_daily_upload_quota_counts_recent_uploads_per_user(
 def test_logs_hold_no_field_values_filename_or_quotes(
     client: TestClient, alice: Headers, caplog: pytest.LogCaptureFixture
 ) -> None:
+    """Expect no field value, quote or filename in the logs after saved and rejected uploads."""
     caplog.set_level(logging.DEBUG)
     filename = "scan-for-zebedee-quillfeather.pdf"
     fields = {

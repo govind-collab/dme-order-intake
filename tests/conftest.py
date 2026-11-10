@@ -1,3 +1,9 @@
+"""Shared test setup: a fresh SQLite database per test and two signed-in users.
+
+Owns the test environment variables, set before any app import so the real database and API key are
+never used.
+"""
+
 import os
 import tempfile
 from collections.abc import Iterator
@@ -19,6 +25,7 @@ from app.models import Base  # noqa: E402
 
 @pytest.fixture
 def client() -> Iterator[TestClient]:
+    """Yield a test client on empty tables and remove dependency overrides afterwards."""
     Base.metadata.drop_all(engine)
     Base.metadata.create_all(engine)
     with TestClient(app) as test_client:
@@ -27,6 +34,7 @@ def client() -> Iterator[TestClient]:
 
 
 def auth_headers(client: TestClient, email: str) -> dict[str, str]:
+    """Register a user with this email and return a bearer header for them."""
     password = "correct horse battery"
     client.post("/auth/register", json={"email": email, "password": password})
     response = client.post("/auth/token", data={"username": email, "password": password})
@@ -35,9 +43,11 @@ def auth_headers(client: TestClient, email: str) -> dict[str, str]:
 
 @pytest.fixture
 def alice(client: TestClient) -> dict[str, str]:
+    """Return a bearer header for the first test user."""
     return auth_headers(client, "alice@example.com")
 
 
 @pytest.fixture
 def bob(client: TestClient) -> dict[str, str]:
+    """Return a bearer header for a second, unrelated test user."""
     return auth_headers(client, "bob@example.com")

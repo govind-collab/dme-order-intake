@@ -1,3 +1,9 @@
+"""Turning an uploaded PDF into an order.
+
+Owns the PDF checks, the daily upload quota, parsing dates as printed, the review that turns each
+extracted field into a stored value and a field report, and the upload flow itself.
+"""
+
 import logging
 import re
 import uuid
@@ -31,6 +37,11 @@ logger = logging.getLogger(__name__)
 
 
 def count_pdf_pages(pdf: bytes) -> int:
+    """Return the page count of an uploaded PDF after checking the model can read it.
+
+    Raises UploadRejected: 413 over 10 MB, 415 when it does not start like a PDF, and 422 when
+    it cannot be opened, is encrypted, or has no pages or more than 50.
+    """
     if len(pdf) > MAX_PDF_BYTES:
         raise UploadRejected(413, "PDF is larger than 10 MB")
     if b"%PDF-" not in pdf[:1024]:
@@ -49,6 +60,11 @@ def count_pdf_pages(pdf: bytes) -> int:
 
 
 def parse_printed_date(text: str) -> tuple[date | None, str | None]:
+    """Parse a date as printed, returning it or None with the reason it could not be read.
+
+    Numeric dates are read as US month/day/year. A two-digit year is refused instead of guessing
+    the century, and a date that does not exist, such as 02/30, is refused too.
+    """
     if match := ISO_DATE.fullmatch(text):
         year, month, day = (int(part) for part in match.groups())
     elif match := US_DATE.fullmatch(text):
@@ -67,6 +83,11 @@ def parse_printed_date(text: str) -> tuple[date | None, str | None]:
 
 
 def checked_value(field: str, text: str) -> tuple[Any, str | None]:
+    """Return the value to store for one field's text, or None with the reason it failed.
+
+    Spaces and hyphens are removed from an NPI and printed dates are parsed first; then the
+    value goes through the same field type as a manual order.
+    """
     candidate: Any = text
     if field == "provider_npi":
         candidate = re.sub(r"[\s-]", "", text)
@@ -81,6 +102,11 @@ def checked_value(field: str, text: str) -> tuple[Any, str | None]:
 
 
 def review_field(field: str, read: ExtractedField) -> tuple[Any, FieldReport]:
+    """Return the value to store for one extracted field, and its field report.
+
+    Missing, illegible, ambiguous and conflicting readings store nothing. A reading that fails a
+    check stores nothing either, and its report keeps the value as read with the reason.
+    """
     value, status, reason = None, FieldStatus.OK, None
     if read.issue == "conflicting":
         status, reason = FieldStatus.CONFLICT, "the document gives different values"
@@ -101,6 +127,12 @@ def review_field(field: str, read: ExtractedField) -> tuple[Any, FieldReport]:
 def create_order_from_pdf(
     db: Session, owner_id: uuid.UUID, pdf: bytes, extract: Extractor
 ) -> Order:
+    """Check, read and save an uploaded PDF, and return the new order.
+
+    Raises UploadRejected: 429 after 100 uploads in 24 hours, the PDF errors from
+    count_pdf_pages, the model errors from the extractor, and 422 when no field was found at
+    all. Nothing is saved when it raises.
+    """
     day_ago = datetime.now(UTC) - timedelta(days=1)
     if orders.count_uploads_since(db, owner_id, day_ago) >= DAILY_UPLOAD_LIMIT:
         raise UploadRejected(429, f"Upload limit of {DAILY_UPLOAD_LIMIT} per 24 hours reached")

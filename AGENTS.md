@@ -23,7 +23,9 @@ Settings come from environment variables. For local runs, copy `.env.example` to
 - Small functions that do one thing. Names say what the thing is.
 - The simplest code that works: no extra layers, no helper used only once, no dead code, no loop inside a loop when a dict or set lookup does it.
 - Type hints everywhere.
-- Comments only where the why is not obvious. No comment that repeats the line, no big comment blocks.
+- Every module and function has a docstring; ruff enforces it (`D`, numpy convention). A module docstring says in one line what the module is for, then what it owns. A function docstring opens with one line saying what it does or returns, starting with a verb such as Return or Parse. Add a short paragraph only for what the signature can't show: what it raises, what it returns on failure, why it works that way. Add a Parameters section only when a parameter's meaning isn't clear from its name and type. Never restate types.
+- Route docstrings are the endpoint descriptions in /docs, so write them for someone calling the API.
+- Inline comments only for the why. No comment that repeats the line, no big comment blocks.
 - Routes stay thin and logic lives in services. The Claude API call lives in one file so tests can fake it.
 - Column types stay portable: SQLite locally and in tests, Postgres on Render, both through `DATABASE_URL`.
 - Change only what the current step needs. Ask before adding anything the plan doesn't have.

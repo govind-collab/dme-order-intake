@@ -1,3 +1,9 @@
+"""Database engine and per-request sessions.
+
+Owns the SQLAlchemy engine built from DATABASE_URL (SQLite locally and in tests, Postgres on
+Render), the session factory and the DbSession dependency.
+"""
+
 from collections.abc import Iterator
 from typing import Annotated
 
@@ -14,6 +20,7 @@ SessionLocal = sessionmaker(engine, expire_on_commit=False)
 
 
 def get_db() -> Iterator[Session]:
+    """Yield a session for one request and close it afterwards."""
     with SessionLocal() as session:
         yield session
 
