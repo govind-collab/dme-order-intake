@@ -19,3 +19,4 @@ services:
 databases:
   - name: dme-order-intake-db
     plan: free
+    ipAllowList: []
