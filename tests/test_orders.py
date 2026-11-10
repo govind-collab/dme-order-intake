@@ -64,6 +64,7 @@ def test_order_with_missing_fields_needs_review(client: TestClient, alice: Heade
         ("patient_dob", "12/10/1985"),
         ("patient_first_name", "Ada2"),
         ("patient_last_name", "Unknown"),
+        ("patient_last_name", "Not provided"),
         ("patient_first_name", "A" * 101),
         ("provider_name", "B" * 201),
         ("provider_name", "   "),
@@ -229,3 +230,18 @@ def test_failed_database_write_keeps_values_out_of_the_error(
     assert "INSERT INTO orders" in message
     for value in ["Zebedee", *VALID_ORDER.values()]:
         assert value not in message
+
+
+@pytest.mark.parametrize("surname", ["Null", "Na", "None"])
+def test_surnames_that_look_like_placeholders_are_kept(
+    client: TestClient, alice: Headers, surname: str
+) -> None:
+    """Expect real surnames such as Null to be stored on create and on PATCH."""
+    order = create(client, alice, {**VALID_ORDER, "patient_last_name": surname})
+    patched = client.patch(
+        f"/orders/{order['id']}", json={"provider_name": f"Grace {surname}"}, headers=alice
+    )
+
+    assert order["patient_last_name"] == surname
+    assert patched.status_code == 200
+    assert patched.json()["provider_name"] == f"Grace {surname}"

@@ -55,10 +55,28 @@ def test_implausible_dates_of_birth_are_rejected(dob: date, reason: str) -> None
 
 
 @pytest.mark.parametrize(
-    "name", ["Ada", "O'Brien-Smith", "O’Brien", "D‘Angelo", "Mary Ann", "José", "Raj, Arjun D.P.M."]
+    "name",
+    [
+        "Ada",
+        "O'Brien-Smith",
+        "O’Brien",
+        "D‘Angelo",
+        "Mary Ann",
+        "José",
+        "José",
+        "अनिल",
+        "Smith–Jones",
+        "Smith‑Jones",
+        "Mary Ann",
+        "Raj, Arjun D.P.M.",
+        "Null",
+        "Na",
+        "None",
+        "Doctor",
+    ],
 )
 def test_real_names_pass(name: str) -> None:
-    """Expect names with apostrophes, hyphens, accents and commas to pass."""
+    """Expect accents, including combining marks, scan dashes and odd surnames to pass."""
     assert name_problem(name) is None
 
 
@@ -68,12 +86,18 @@ def test_real_names_pass(name: str) -> None:
         ("Ada2", "only contain letters"),
         ("N/A", "only contain letters"),
         ("...", "no letters"),
+        ("N.A.", "label"),
+        ("Not provided", "label"),
+        ("Patient Name", "label"),
+        ("see above", "label"),
         ("Unknown", "placeholder"),
-        ("patient.", "placeholder"),
+        ("Unknown Unknown", "placeholder"),
+        ("Illegible", "placeholder"),
+        ("DOB", "placeholder"),
     ],
 )
 def test_non_names_are_rejected(name: str, reason: str) -> None:
-    """Expect digits, slashes, punctuation only and placeholders to fail."""
+    """Expect digits, slashes, punctuation only, labels and placeholders to fail."""
     problem = name_problem(name)
 
     assert problem is not None and reason in problem

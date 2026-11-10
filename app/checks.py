@@ -6,28 +6,55 @@ without echoing the value.
 """
 
 import re
+import unicodedata
 from datetime import date
 
 MAX_AGE_YEARS = 130
-NAME_PUNCTUATION = frozenset(" '‘’-.,")
-PLACEHOLDER_NAMES = frozenset(
-    {"unknown", "none", "null", "na", "tbd", "name", "patient", "provider", "physician", "doctor"}
+# Scans turn ' into curly quotes, - into other dashes and spaces into no-break spaces
+NAME_PUNCTUATION = frozenset("  '‘’-‐‑‒–—.,")
+# Only phrases that are never a name. Single words that are also real surnames (Null, Na,
+# None, Doctor) are deliberately left out.
+LABEL_PHRASES = frozenset(
+    {
+        "n a",
+        "not provided",
+        "not available",
+        "not applicable",
+        "not given",
+        "none given",
+        "see above",
+        "same as above",
+        "name",
+        "patient name",
+        "first name",
+        "last name",
+        "provider name",
+        "physician name",
+    }
 )
+PLACEHOLDER_WORDS = frozenset({"unknown", "illegible", "tbd", "dob"})
 
 
 def name_problem(name: str) -> str | None:
     """Return why a name is not a plausible person's name, or None if it is.
 
-    Letters from any alphabet are allowed, plus spaces, hyphens, periods, commas and straight or
-    curly apostrophes, because scans often turn ' into ’. Placeholders such as "unknown" are
-    refused.
+    Letters from any alphabet are allowed with their combining accents, plus spaces, hyphens and
+    dashes, periods, commas and straight or curly apostrophes. Labels such as "Not provided",
+    "N.A." or "Patient Name", and names made only of words like "unknown", are refused.
     """
     if not any(char.isalpha() for char in name):
         return "name has no letters"
-    if not all(char.isalpha() or char in NAME_PUNCTUATION for char in name):
-        return "name may only contain letters, spaces, hyphens, apostrophes, periods and commas"
-    if name.lower().strip(" .") in PLACEHOLDER_NAMES:
-        return "name is a placeholder, not a name"
+    if not all(
+        char.isalpha() or char in NAME_PUNCTUATION or unicodedata.category(char).startswith("M")
+        for char in name
+    ):
+        return (
+            "name may only contain letters, accents, spaces, hyphens, apostrophes, periods "
+            "and commas"
+        )
+    words = re.sub(r"[\W_]+", " ", name.lower()).split()
+    if " ".join(words) in LABEL_PHRASES or set(words) <= PLACEHOLDER_WORDS:
+        return "name is a label or placeholder, not a name"
     return None
 
 
