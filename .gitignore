@@ -1,0 +1,15 @@
+# Source documents can carry patient data, and .env holds secrets
+*.pdf
+.env
+.env.*
+!.env.example
+
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+.ruff_cache/
+*.db
+*.sqlite3
+
+.claude/settings.local.json
