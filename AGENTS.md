@@ -16,7 +16,7 @@ ruff check .
 ruff format --check .             # `ruff format .` fixes it
 ```
 
-Settings come from environment variables. For local runs, copy `.env.example` to `.env` and fill it in by hand.
+Settings come from environment variables. For local runs, copy `.env.example` to `.env` and fill it in by hand. `JWT_SECRET` needs 32+ characters: `python -c "import secrets; print(secrets.token_urlsafe(32))"`.
 
 ## Code rules
 
