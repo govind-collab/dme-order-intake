@@ -34,6 +34,9 @@ FIELD_TYPES = {
 }
 
 logger = logging.getLogger(__name__)
+# pypdf quotes raw bytes from damaged files in its log messages, and those bytes can be patient
+# text. Problems that matter still raise, and those become a 422.
+logging.getLogger("pypdf").setLevel(logging.CRITICAL + 1)
 
 
 def count_pdf_pages(pdf: bytes) -> int:

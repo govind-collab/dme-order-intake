@@ -369,3 +369,19 @@ def test_logs_hold_no_field_values_filename_or_quotes(
     logged = caplog.text + "".join(str(record.args) for record in caplog.records)
     for text in sensitive:
         assert text not in logged
+
+
+def test_damaged_pdf_text_never_reaches_the_log(
+    client: TestClient, alice: Headers, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Expect pypdf's complaints about a damaged PDF, which quote its bytes, to stay out of logs."""
+    caplog.set_level(logging.DEBUG)
+    damaged = make_pdf().replace(
+        b"/Type /Page\n", b"/Type /Page\n/Note ] (Order for Zebedee Quillfeather)\n", 1
+    )
+    use_extractor(reading())
+
+    response = upload(client, alice, damaged)
+
+    assert response.status_code == 201
+    assert "Zebedee" not in caplog.text
