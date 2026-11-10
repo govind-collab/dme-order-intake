@@ -11,6 +11,7 @@ from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy import text
 
 # Settings are read when app modules are imported, so the test database must be set first
 os.environ["DATABASE_URL"] = f"sqlite:///{Path(tempfile.mkdtemp()).as_posix()}/test.db"
@@ -24,10 +25,16 @@ from app.models import Base  # noqa: E402
 
 
 @pytest.fixture
-def client() -> Iterator[TestClient]:
-    """Yield a test client on empty tables and remove dependency overrides afterwards."""
+def empty_database() -> None:
+    """Drop every table, Alembic's version table included."""
     Base.metadata.drop_all(engine)
-    Base.metadata.create_all(engine)
+    with engine.begin() as connection:
+        connection.execute(text("DROP TABLE IF EXISTS alembic_version"))
+
+
+@pytest.fixture
+def client(empty_database: None) -> Iterator[TestClient]:
+    """Yield a test client on a freshly migrated database and remove overrides afterwards."""
     with TestClient(app) as test_client:
         yield test_client
     app.dependency_overrides.clear()

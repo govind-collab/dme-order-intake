@@ -1,6 +1,6 @@
 """FastAPI application: wiring, error handlers and the health check.
 
-Owns app creation, logging setup, table creation on start, the upload size limit and in-memory
+Owns app creation, logging setup, migrations on start, the upload size limit and in-memory
 upload spool, the 422 handler that drops echoed input, the UploadRejected handler and /health.
 """
 
@@ -15,9 +15,8 @@ from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 from starlette.formparsers import MultiPartParser
 
-from app.db import DbSession, engine
+from app.db import DbSession, migrate_database
 from app.errors import UploadRejected
-from app.models import Base
 from app.routers import auth, orders
 from app.upload_limit import MAX_UPLOAD_REQUEST_BYTES, UploadSizeLimit
 
@@ -31,8 +30,8 @@ MultiPartParser.spool_max_size = MAX_UPLOAD_REQUEST_BYTES
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-    """Create any missing tables when the app starts."""
-    Base.metadata.create_all(engine)
+    """Bring the database schema up to the latest migration when the app starts."""
+    migrate_database()
     yield
 
 

@@ -14,7 +14,10 @@ uvicorn app.main:app --reload     # http://127.0.0.1:8000/docs
 pytest
 ruff check .
 ruff format --check .             # `ruff format .` fixes it
+alembic revision --autogenerate -m "Describe the change"   # after changing app/models.py
 ```
+
+Migrations run when the app starts. A database made before migrations existed is stamped at `0001` instead of being created again.
 
 Settings come from environment variables. For local runs, copy `.env.example` to `.env` and fill it in by hand. `JWT_SECRET` needs 32+ characters: `python -c "import secrets; print(secrets.token_urlsafe(32))"`.
 

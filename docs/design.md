@@ -53,6 +53,8 @@ flowchart TD
 
 Routes stay thin and logic lives in services. The Claude call lives in one module so tests replace it with a fake.
 
+Alembic migrations run when the app starts, in one transaction. A database whose tables were made by `create_all` before migrations existed (the first live database) has no `alembic_version` table; it is stamped at the first revision, which matches those tables, and then upgraded like any other.
+
 ## Data model
 
 | Table | Columns |
@@ -152,7 +154,6 @@ If we run behind, cut in this order: the generated test PDF, then the quota, the
 - **Frontend:** `/docs` serves as the UI. Built only if 30 or more minutes are spare.
 - **Background jobs for extraction:** a synchronous call is fine at this scale. A queue needs a worker and polling.
 - **Keeping the original PDF:** less PHI at rest, at the cost of no later review against the source.
-- **Alembic migrations:** tables are created at startup. First thing to add with spare time.
 - **NPI registry lookup and a second verification read:** the strongest extra checks, but they add an external dependency and latency.
 - **Refresh tokens, password reset, roles, audit log, field-level encryption:** needed in production, not for this demo.
 - **A labelled evaluation set and Docker:** no time. The README will say accuracy is only spot-checked.
