@@ -1,0 +1,65 @@
+from datetime import date
+
+import pytest
+
+from app.checks import dob_problem, name_problem, npi_problem
+
+TODAY = date(2026, 11, 10)
+
+
+@pytest.mark.parametrize("npi", ["1234567893", "2000000002"])
+def test_valid_npis_pass(npi: str) -> None:
+    assert npi_problem(npi) is None
+
+
+@pytest.mark.parametrize(
+    ("npi", "reason"),
+    [
+        ("1234567890", "check digit"),
+        ("3234567893", "start with 1 or 2"),
+        ("123456789", "10 digits"),
+        ("12345678931", "10 digits"),
+        ("12345abcde", "10 digits"),
+        ("１２３４５６７８９３", "10 digits"),
+    ],
+)
+def test_invalid_npis_are_rejected_with_reason(npi: str, reason: str) -> None:
+    problem = npi_problem(npi)
+
+    assert problem is not None and reason in problem
+
+
+@pytest.mark.parametrize("dob", [TODAY, date(1980, 2, 29), date(1895, 11, 11)])
+def test_plausible_dates_of_birth_pass(dob: date) -> None:
+    assert dob_problem(dob, TODAY) is None
+
+
+@pytest.mark.parametrize(
+    ("dob", "reason"),
+    [(date(2026, 11, 11), "future"), (date(1895, 11, 10), "more than 130 years")],
+)
+def test_implausible_dates_of_birth_are_rejected(dob: date, reason: str) -> None:
+    problem = dob_problem(dob, TODAY)
+
+    assert problem is not None and reason in problem
+
+
+@pytest.mark.parametrize("name", ["Ada", "O'Brien-Smith", "Mary Ann", "José", "Raj, Arjun D.P.M."])
+def test_real_names_pass(name: str) -> None:
+    assert name_problem(name) is None
+
+
+@pytest.mark.parametrize(
+    ("name", "reason"),
+    [
+        ("Ada2", "only contain letters"),
+        ("N/A", "only contain letters"),
+        ("...", "no letters"),
+        ("Unknown", "placeholder"),
+        ("patient.", "placeholder"),
+    ],
+)
+def test_non_names_are_rejected(name: str, reason: str) -> None:
+    problem = name_problem(name)
+
+    assert problem is not None and reason in problem

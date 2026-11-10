@@ -9,7 +9,7 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from app.db import DbSession, engine
 from app.models import Base
-from app.routers import auth
+from app.routers import auth, orders
 
 
 @asynccontextmanager
@@ -20,6 +20,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
 app = FastAPI(title="DME order intake", lifespan=lifespan)
 app.include_router(auth.router)
+app.include_router(orders.router)
 
 
 @app.exception_handler(RequestValidationError)

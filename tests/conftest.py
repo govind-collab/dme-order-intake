@@ -22,3 +22,20 @@ def client() -> Iterator[TestClient]:
     with TestClient(app) as test_client:
         yield test_client
     app.dependency_overrides.clear()
+
+
+def auth_headers(client: TestClient, email: str) -> dict[str, str]:
+    password = "correct horse battery"
+    client.post("/auth/register", json={"email": email, "password": password})
+    response = client.post("/auth/token", data={"username": email, "password": password})
+    return {"Authorization": f"Bearer {response.json()['access_token']}"}
+
+
+@pytest.fixture
+def alice(client: TestClient) -> dict[str, str]:
+    return auth_headers(client, "alice@example.com")
+
+
+@pytest.fixture
+def bob(client: TestClient) -> dict[str, str]:
+    return auth_headers(client, "bob@example.com")
