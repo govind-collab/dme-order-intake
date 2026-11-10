@@ -9,6 +9,10 @@ from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy import text
+from sqlalchemy.exc import OperationalError
+
+from app.db import engine
 
 Headers = dict[str, str]
 
@@ -209,3 +213,19 @@ def test_every_orders_endpoint_requires_a_valid_token(client: TestClient, alice:
 def test_malformed_order_id_is_422(client: TestClient, alice: Headers) -> None:
     """Expect a 422 for an order id that is not a UUID."""
     assert client.get("/orders/not-a-uuid", headers=alice).status_code == 422
+
+
+def test_failed_database_write_keeps_values_out_of_the_error(
+    client: TestClient, alice: Headers
+) -> None:
+    """Expect a failed INSERT's error, which the server logs, to hold no field value."""
+    with engine.begin() as connection:
+        connection.execute(text("DROP TABLE orders"))
+
+    with pytest.raises(OperationalError) as failed:
+        client.post("/orders", json={**VALID_ORDER, "patient_first_name": "Zebedee"}, headers=alice)
+
+    message = str(failed.value)
+    assert "INSERT INTO orders" in message
+    for value in ["Zebedee", *VALID_ORDER.values()]:
+        assert value not in message

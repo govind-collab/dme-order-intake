@@ -22,7 +22,11 @@ FIRST_REVISION = "0001"
 
 # FastAPI runs sync endpoints in a thread pool, so SQLite must allow cross-thread use
 connect_args = {"check_same_thread": False} if settings.database_url.startswith("sqlite") else {}
-engine = create_engine(settings.database_url, connect_args=connect_args, pool_pre_ping=True)
+# Bound values are patient data, and SQLAlchemy would otherwise print them in error messages,
+# which end up in the server log whenever a write fails
+engine = create_engine(
+    settings.database_url, connect_args=connect_args, pool_pre_ping=True, hide_parameters=True
+)
 SessionLocal = sessionmaker(engine, expire_on_commit=False)
 
 

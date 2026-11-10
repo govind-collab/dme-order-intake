@@ -126,7 +126,7 @@ AGENTS.md        rules for coding agents (CLAUDE.md imports it)
 What the service does today:
 
 - **Uploads are never stored.** A PDF is read in memory, sent to Claude and dropped; only its SHA-256 and page count are kept. Starlette's spill-to-disk limit is raised so an upload never reaches a temp file. Uploads over 10 MB are cut off while the body is still arriving.
-- **No patient data in logs or errors.** Logs hold ids, statuses and timings only, and a test checks that no field value, quote or filename gets logged. Validation errors never echo the input back.
+- **No patient data in logs or errors.** Logs hold ids, statuses and timings only, and a test checks that no field value, quote or filename gets logged. Validation errors never echo the input back, and database errors hide the values bound to the query.
 - **Each user's orders are private.** Every query filters by owner, and another user's order returns 404, the same as one that doesn't exist. The tests cover read, update, delete and list with two users.
 - **Accounts and tokens:** argon2 password hashes and JWTs that expire after 60 minutes. A login with an unknown email takes as long as one with a wrong password.
 - **Limits:** a length cap on every string field, a page-size cap on the list, and 100 uploads per user per 24 hours.
