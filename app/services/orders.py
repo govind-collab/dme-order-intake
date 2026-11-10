@@ -1,15 +1,14 @@
 """Reading and writing orders.
 
-Owns the order status rule, creating orders by hand or from an upload, the upload count behind the
-quota, owner-scoped queries, and updates that keep the field report in step with the order.
+Owns the order status rule, creating orders by hand or from an upload, owner-scoped queries, and
+updates that keep the field report in step with the order.
 """
 
 import hashlib
 import uuid
-from datetime import datetime
 from typing import Any
 
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.models import FieldStatus, Order, OrderSource, OrderStatus
@@ -60,19 +59,6 @@ def create_uploaded_order(
         **values,
     )
     return save_new_order(db, order)
-
-
-def count_uploads_since(db: Session, owner_id: uuid.UUID, since: datetime) -> int:
-    """Return how many orders the user has uploaded since `since`.
-
-    Deleted orders no longer count, and uploads that were rejected never did.
-    """
-    query = select(func.count()).where(
-        Order.owner_id == owner_id,
-        Order.source == OrderSource.UPLOAD,
-        Order.created_at >= since,
-    )
-    return db.scalar(query) or 0
 
 
 def list_orders(

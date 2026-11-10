@@ -14,13 +14,15 @@ import pytest
 from fastapi.testclient import TestClient
 from httpx2 import Response
 from pypdf import PdfWriter
+from sqlalchemy import func, select, update
 
-from app.db import SessionLocal
+from app.config import settings
+from app.db import SessionLocal, engine
 from app.deps import get_extractor
 from app.errors import UploadRejected
 from app.extractor import ExtractedField, ExtractedOrder
 from app.main import app
-from app.models import Order
+from app.models import UploadAttempt, User
 from app.services import intake
 from app.services.intake import MAX_PDF_BYTES
 
@@ -332,26 +334,128 @@ def test_patch_on_manual_order_adds_no_field_report(client: TestClient, alice: H
     assert patched.json()["field_report"] is None
 
 
-def test_daily_upload_quota_counts_recent_uploads_per_user(
-    client: TestClient, alice: Headers, bob: Headers, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """Expect a 429 past the limit; manual, other users' and day-old uploads don't count."""
-    monkeypatch.setattr(intake, "DAILY_UPLOAD_LIMIT", 2)
-    calls = use_extractor(reading())
-    first = upload(client, alice).json()
-    upload(client, alice)
-    client.post("/orders", json={"patient_first_name": "Ada"}, headers=alice)
+def limit_uploads(monkeypatch: pytest.MonkeyPatch, per_user: int, total: int = 1000) -> None:
+    """Set the daily upload limits for one test."""
+    monkeypatch.setattr(settings, "daily_upload_limit_per_user", per_user)
+    monkeypatch.setattr(settings, "daily_upload_limit_total", total)
 
+
+def user_id(email: str) -> uuid.UUID:
+    """Return the id of the user with this email."""
+    with SessionLocal() as db:
+        return db.scalars(select(User.id).where(User.email == email)).one()
+
+
+@pytest.mark.parametrize(
+    "outcome",
+    [
+        UploadRejected(502, "The model declined to read this document"),
+        ExtractedOrder(**{field: read(None) for field in ExtractedOrder.model_fields}),
+    ],
+)
+def test_uploads_rejected_after_the_model_still_count(
+    client: TestClient, alice: Headers, monkeypatch: pytest.MonkeyPatch, outcome: object
+) -> None:
+    """Expect model failures and no-field documents to use up the limit like saved uploads."""
+    limit_uploads(monkeypatch, per_user=2)
+    use_extractor(outcome)
+    assert [upload(client, alice).status_code for _ in range(2)] in ([502, 502], [422, 422])
+
+    calls = use_extractor(reading())
     refused = upload(client, alice)
+
     assert refused.status_code == 429
     assert refused.json() == {"detail": "Upload limit of 2 per 24 hours reached"}
-    assert len(calls) == 2
-    assert upload(client, bob).status_code == 201
+    assert calls == []
+
+
+def test_deleting_orders_gives_no_uploads_back(
+    client: TestClient, alice: Headers, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Expect the limit to hold after the uploaded orders are deleted; manual orders don't count."""
+    limit_uploads(monkeypatch, per_user=2)
+    use_extractor(reading())
+    client.post("/orders", json={"patient_first_name": "Ada"}, headers=alice)
+    for _ in range(2):
+        order_id = upload(client, alice).json()["id"]
+        assert client.delete(f"/orders/{order_id}", headers=alice).status_code == 204
+
+    assert upload(client, alice).status_code == 429
+
+
+def test_limits_apply_per_user_and_across_all_users(
+    client: TestClient, alice: Headers, bob: Headers, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Expect a 429 past one user's limit and a 503 once all users together reach the cap."""
+    limit_uploads(monkeypatch, per_user=2, total=3)
+    use_extractor(reading())
+
+    alice_statuses = [upload(client, alice).status_code for _ in range(3)]
+    bob_statuses = [upload(client, bob).status_code for _ in range(2)]
+
+    assert alice_statuses == [201, 201, 429]
+    assert bob_statuses == [201, 503]
+    assert upload(client, bob).json() == {
+        "detail": "The service has reached its daily upload limit"
+    }
+
+
+def test_an_upload_in_flight_counts_against_the_limit(
+    client: TestClient, alice: Headers, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Expect a second upload that starts while the first is still with the model to be refused."""
+    limit_uploads(monkeypatch, per_user=1)
+    alice_id = user_id("alice@example.com")
+    second_upload: list[int] = []
+
+    def extract_while_a_second_upload_starts(pdf: bytes) -> ExtractedOrder:
+        """Start a second upload for the same user, as a parallel request would."""
+        with SessionLocal() as db:
+            try:
+                intake.claim_upload_slot(db, alice_id)
+                second_upload.append(201)
+            except UploadRejected as rejected:
+                second_upload.append(rejected.status_code)
+        return reading()
+
+    app.dependency_overrides[get_extractor] = lambda: extract_while_a_second_upload_starts
+
+    assert upload(client, alice).status_code == 201
+    assert second_upload == [429]
+
+
+def test_refused_and_day_old_attempts_do_not_count(
+    client: TestClient, alice: Headers, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Expect a refused attempt to leave no row, and attempts over 24 hours old to drop out."""
+    limit_uploads(monkeypatch, per_user=1)
+    use_extractor(reading())
+    upload(client, alice)
+    assert upload(client, alice).status_code == 429
 
     with SessionLocal() as db:
-        db.get(Order, uuid.UUID(first["id"])).created_at = datetime.now(UTC) - timedelta(hours=25)
+        assert db.scalar(select(func.count()).select_from(UploadAttempt)) == 1
+        db.execute(update(UploadAttempt).values(created_at=datetime.now(UTC) - timedelta(hours=25)))
         db.commit()
+
     assert upload(client, alice).status_code == 201
+
+
+def test_no_database_connection_is_held_during_the_model_call(
+    client: TestClient, alice: Headers
+) -> None:
+    """Expect every connection back in the pool while the model reads the PDF."""
+    connections_in_use: list[int] = []
+
+    def extract_and_count_connections(pdf: bytes) -> ExtractedOrder:
+        """Note how many pooled connections are checked out right now."""
+        connections_in_use.append(engine.pool.checkedout())
+        return reading()
+
+    app.dependency_overrides[get_extractor] = lambda: extract_and_count_connections
+
+    assert upload(client, alice).status_code == 201
+    assert connections_in_use == [0]
 
 
 def test_logs_hold_no_field_values_filename_or_quotes(

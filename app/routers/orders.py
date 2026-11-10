@@ -69,9 +69,10 @@ def upload_order(
     check, `conflict` the document gives different values. Fix a field with PATCH and its report
     then says `set by hand`.
 
-    Errors: 413 too large, 415 not a PDF, 422 unreadable or no fields found, 429 more than 100
-    uploads in 24 hours, 502 or 503 when the model call fails. Nothing is saved on an error, and
-    a 503 is safe to retry.
+    Errors: 413 too large, 415 not a PDF, 422 unreadable or no fields found, 429 over your daily
+    upload limit (100 in 24 hours by default), 503 over the service's daily limit, 502 or 503 when
+    the model call fails. No order is saved on an error. Every upload that reaches the model
+    counts against the limits, even if it fails or its order is deleted later.
     """
     order = intake.create_order_from_pdf(db, user.id, file.file.read(), extract)
     return OrderRead.model_validate(order)

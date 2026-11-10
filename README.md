@@ -129,7 +129,7 @@ What the service does today:
 - **No patient data in logs or errors.** Logs hold ids, statuses and timings only, and a test checks that no field value, quote or filename gets logged. Validation errors never echo the input back, database errors hide the values bound to the query, and the PDF library's warnings are switched off because they quote raw bytes from damaged files.
 - **Each user's orders are private.** Every query filters by owner, and another user's order returns 404, the same as one that doesn't exist. The tests cover read, update, delete and list with two users.
 - **Accounts and tokens:** argon2 password hashes and JWTs that expire after 60 minutes. A login with an unknown email takes as long as one with a wrong password.
-- **Limits:** a length cap on every string field, a page-size cap on the list, and 100 uploads per user per 24 hours.
+- **Limits:** a length cap on every string field and a page-size cap on the list. Every upload that reaches the model is recorded first and counts for 24 hours, even if it is rejected afterwards or its order is deleted. The limits are 100 per user and 500 across all users (`DAILY_UPLOAD_LIMIT_PER_USER`, `DAILY_UPLOAD_LIMIT_TOTAL`), and uploads sent at the same moment can't all slip under them.
 - **Frontend:** the token stays in memory only. Nothing goes in browser storage or the console, and the API allows only the app's origin through CORS.
 - **Secrets and database:** secrets are only in environment variables. The database accepts no connections from the internet, only from the web service.
 
@@ -148,7 +148,7 @@ What the service does today:
 - **No NPI registry lookup.** Next: check the NPI against NPPES and confirm it belongs to the named provider.
 - **Uploads are synchronous.** That's fine at 5 to 10 seconds per PDF; at volume it needs a queue with status polling.
 - **The PDF is not kept**, so a reviewer can't compare against the source in the app. A retention-limited, encrypted store would fix that.
-- **The quota only counts saved orders.** A rejected upload that reached the model costs money without counting; the spend limit on the API key is the real cost cap.
+- **Anyone can sign up**, so the per-user limit alone doesn't bound cost. The limit across all users and the spend limit on the API key do.
 - **No refresh tokens, password reset, roles or organisations.** The free Postgres expires 30 days after creation, so it needs a paid plan before then.
 - **Smaller gaps:**
   - The NPI reason names only the first rule that fails.
@@ -163,7 +163,7 @@ python -m venv .venv
 pip install -r requirements-dev.txt
 cp .env.example .env            # fill in JWT_SECRET (32+ characters) and ANTHROPIC_API_KEY
 uvicorn app.main:app --reload   # http://127.0.0.1:8000/docs
-pytest                          # 121 tests, no network: the model call is faked
+pytest                          # 156 tests, no network: the model call is faked
 ruff check . && ruff format --check .
 ```
 

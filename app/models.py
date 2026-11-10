@@ -87,3 +87,19 @@ class Order(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utcnow, onupdate=utcnow
     )
+
+
+class UploadAttempt(Base):
+    """One upload that passed the file checks and is about to be read by the model.
+
+    Written before the model call and kept when the upload fails or its order is deleted, so the
+    daily limits count every paid call. Only an attempt refused for being over a limit is removed.
+    """
+
+    __tablename__ = "upload_attempts"
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"), index=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, index=True
+    )

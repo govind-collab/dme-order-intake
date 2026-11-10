@@ -1,6 +1,6 @@
 """Turning an uploaded PDF into an order.
 
-Owns the PDF checks, the daily upload quota, parsing dates as printed, the review that turns each
+Owns the PDF checks, the daily upload limits, parsing dates as printed, the review that turns each
 extracted field into a stored value and a field report, and the upload flow itself.
 """
 
@@ -14,17 +14,18 @@ from typing import Any
 
 from pydantic import TypeAdapter, ValidationError
 from pypdf import PdfReader
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from app.config import settings
 from app.errors import UploadRejected
 from app.extractor import ExtractedField, Extractor
-from app.models import FieldStatus, Order
+from app.models import FieldStatus, Order, UploadAttempt
 from app.schemas import FieldReport, OrderInput
 from app.services import orders
 
 MAX_PDF_BYTES = 10 * 1024 * 1024
 MAX_PDF_PAGES = 50
-DAILY_UPLOAD_LIMIT = 100
 ISO_DATE = re.compile(r"(\d{4})-(\d{1,2})-(\d{1,2})")
 US_DATE = re.compile(r"(\d{1,2})[/.-](\d{1,2})[/.-](\d{2}|\d{4})")
 WRITTEN_DATE_FORMATS = (
@@ -117,8 +118,8 @@ def review_field(field: str, read: ExtractedField) -> tuple[Any, FieldReport]:
     """Return the value to store for one extracted field, and its field report.
 
     Missing (null or blank), illegible, ambiguous and conflicting readings store nothing, so a
-    reply of empty strings ends as "no fields found". A reading that fails a
-    check stores nothing either, and its report keeps the value as read with the reason.
+    reply of empty strings ends as "no fields found". A reading that fails a check stores nothing
+    either, and its report keeps the value as read with the reason.
     """
     value, status, reason = None, FieldStatus.OK, None
     if read.issue == "conflicting":
@@ -137,19 +138,45 @@ def review_field(field: str, read: ExtractedField) -> tuple[Any, FieldReport]:
     return value, report
 
 
+def claim_upload_slot(db: Session, owner_id: uuid.UUID) -> None:
+    """Record an upload attempt, then refuse it if it takes a daily limit over.
+
+    The attempt is committed before anything is counted, so uploads sent at the same moment see
+    each other and cannot all slip under a limit. An attempt stays counted for 24 hours even if
+    the upload is rejected afterwards or its order is deleted. An attempt refused here is
+    removed again, so retrying while over a limit does not extend the wait. Raises
+    UploadRejected: 429 past the per-user limit, 503 past the limit across all users.
+    """
+    attempt = UploadAttempt(user_id=owner_id)
+    db.add(attempt)
+    db.commit()
+    recent = select(func.count()).where(
+        UploadAttempt.created_at >= datetime.now(UTC) - timedelta(days=1)
+    )
+    per_user = settings.daily_upload_limit_per_user
+    over_user_limit = db.scalar(recent.where(UploadAttempt.user_id == owner_id)) > per_user
+    over_total_limit = db.scalar(recent) > settings.daily_upload_limit_total
+    if over_user_limit or over_total_limit:
+        db.delete(attempt)
+    # Ending the transaction also hands the connection back before the slow model call
+    db.commit()
+    if over_user_limit:
+        raise UploadRejected(429, f"Upload limit of {per_user} per 24 hours reached")
+    if over_total_limit:
+        raise UploadRejected(503, "The service has reached its daily upload limit")
+
+
 def create_order_from_pdf(
     db: Session, owner_id: uuid.UUID, pdf: bytes, extract: Extractor
 ) -> Order:
     """Check, read and save an uploaded PDF, and return the new order.
 
-    Raises UploadRejected: 429 after 100 uploads in 24 hours, the PDF errors from
-    count_pdf_pages, the model errors from the extractor, and 422 when no field was found at
-    all. Nothing is saved when it raises.
+    Raises UploadRejected: the PDF errors from count_pdf_pages, the limit errors from
+    claim_upload_slot, the model errors from the extractor, and 422 when no field was found at
+    all. No order is saved when it raises.
     """
-    day_ago = datetime.now(UTC) - timedelta(days=1)
-    if orders.count_uploads_since(db, owner_id, day_ago) >= DAILY_UPLOAD_LIMIT:
-        raise UploadRejected(429, f"Upload limit of {DAILY_UPLOAD_LIMIT} per 24 hours reached")
     pages = count_pdf_pages(pdf)
+    claim_upload_slot(db, owner_id)
     reviewed = {field: review_field(field, read) for field, read in extract(pdf)}
     if all(report.status == FieldStatus.MISSING for _, report in reviewed.values()):
         raise UploadRejected(422, "No order fields were found in the document")

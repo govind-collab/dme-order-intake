@@ -17,6 +17,10 @@ services:
         sync: false
       - key: FRONTEND_ORIGIN
         value: https://dme-order-intake-ui.onrender.com
+      - key: DAILY_UPLOAD_LIMIT_PER_USER
+        value: "100"
+      - key: DAILY_UPLOAD_LIMIT_TOTAL
+        value: "500"
 
   # A separate static site, so a frontend build can never break the API deploy
   - type: web

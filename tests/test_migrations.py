@@ -11,7 +11,7 @@ from alembic.script import ScriptDirectory
 from sqlalchemy import select
 
 from app.db import ALEMBIC_INI, SessionLocal, engine, migrate_database
-from app.models import Base, User
+from app.models import Base, Order, User
 
 HEAD = ScriptDirectory.from_config(Config(str(ALEMBIC_INI))).get_current_head()
 
@@ -35,7 +35,8 @@ def test_tables_made_before_migrations_are_stamped_and_keep_their_rows(
     empty_database: None,
 ) -> None:
     """Expect pre-migration tables to be stamped, not created again, with their rows intact."""
-    Base.metadata.create_all(engine)
+    # The tables create_all made before migrations existed, as on the first live database
+    Base.metadata.create_all(engine, tables=[User.__table__, Order.__table__])
     with SessionLocal() as db:
         db.add(User(email="kept@example.com", password_hash="hash"))
         db.commit()
