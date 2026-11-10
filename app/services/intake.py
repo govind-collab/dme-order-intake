@@ -2,7 +2,7 @@ import logging
 import re
 import uuid
 from contextlib import suppress
-from datetime import date, datetime
+from datetime import UTC, date, datetime, timedelta
 from io import BytesIO
 from typing import Any
 
@@ -18,6 +18,7 @@ from app.services import orders
 
 MAX_PDF_BYTES = 10 * 1024 * 1024
 MAX_PDF_PAGES = 50
+DAILY_UPLOAD_LIMIT = 100
 ISO_DATE = re.compile(r"(\d{4})-(\d{1,2})-(\d{1,2})")
 US_DATE = re.compile(r"(\d{1,2})[/.-](\d{1,2})[/.-](\d{2}|\d{4})")
 WRITTEN_DATE_FORMATS = ("%B %d, %Y", "%b %d, %Y", "%B %d %Y", "%b %d %Y", "%d %B %Y", "%d %b %Y")
@@ -100,6 +101,9 @@ def review_field(field: str, read: ExtractedField) -> tuple[Any, FieldReport]:
 def create_order_from_pdf(
     db: Session, owner_id: uuid.UUID, pdf: bytes, extract: Extractor
 ) -> Order:
+    day_ago = datetime.now(UTC) - timedelta(days=1)
+    if orders.count_uploads_since(db, owner_id, day_ago) >= DAILY_UPLOAD_LIMIT:
+        raise UploadRejected(429, f"Upload limit of {DAILY_UPLOAD_LIMIT} per 24 hours reached")
     pages = count_pdf_pages(pdf)
     reviewed = {field: review_field(field, read) for field, read in extract(pdf)}
     if all(report.status == FieldStatus.MISSING for _, report in reviewed.values()):

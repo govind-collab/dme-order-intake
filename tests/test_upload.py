@@ -1,3 +1,5 @@
+import uuid
+from datetime import UTC, datetime, timedelta
 from io import BytesIO
 
 import pytest
@@ -5,10 +7,13 @@ from fastapi.testclient import TestClient
 from httpx2 import Response
 from pypdf import PdfWriter
 
+from app.db import SessionLocal
 from app.deps import get_extractor
 from app.errors import UploadRejected
 from app.extractor import ExtractedField, ExtractedOrder
 from app.main import app
+from app.models import Order
+from app.services import intake
 from app.services.intake import MAX_PDF_BYTES
 
 Headers = dict[str, str]
@@ -277,3 +282,24 @@ def test_patch_on_manual_order_adds_no_field_report(client: TestClient, alice: H
     )
 
     assert patched.json()["field_report"] is None
+
+
+def test_daily_upload_quota_counts_recent_uploads_per_user(
+    client: TestClient, alice: Headers, bob: Headers, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(intake, "DAILY_UPLOAD_LIMIT", 2)
+    calls = use_extractor(reading())
+    first = upload(client, alice).json()
+    upload(client, alice)
+    client.post("/orders", json={"patient_first_name": "Ada"}, headers=alice)
+
+    refused = upload(client, alice)
+    assert refused.status_code == 429
+    assert refused.json() == {"detail": "Upload limit of 2 per 24 hours reached"}
+    assert len(calls) == 2
+    assert upload(client, bob).status_code == 201
+
+    with SessionLocal() as db:
+        db.get(Order, uuid.UUID(first["id"])).created_at = datetime.now(UTC) - timedelta(hours=25)
+        db.commit()
+    assert upload(client, alice).status_code == 201

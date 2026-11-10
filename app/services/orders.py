@@ -1,8 +1,9 @@
 import hashlib
 import uuid
+from datetime import datetime
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.models import FieldStatus, Order, OrderSource, OrderStatus
@@ -46,6 +47,15 @@ def create_uploaded_order(
         **values,
     )
     return save_new_order(db, order)
+
+
+def count_uploads_since(db: Session, owner_id: uuid.UUID, since: datetime) -> int:
+    query = select(func.count()).where(
+        Order.owner_id == owner_id,
+        Order.source == OrderSource.UPLOAD,
+        Order.created_at >= since,
+    )
+    return db.scalar(query) or 0
 
 
 def list_orders(
