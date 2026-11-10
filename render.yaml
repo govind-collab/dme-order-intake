@@ -15,6 +15,20 @@ services:
         generateValue: true
       - key: ANTHROPIC_API_KEY
         sync: false
+      - key: FRONTEND_ORIGIN
+        value: https://dme-order-intake-ui.onrender.com
+
+  # A separate static site, so a frontend build can never break the API deploy
+  - type: web
+    name: dme-order-intake-ui
+    runtime: static
+    buildCommand: cd frontend && npm ci && npm run build
+    staticPublishPath: frontend/dist
+    envVars:
+      - key: VITE_API_URL
+        value: https://dme-order-intake.onrender.com
+      - key: NODE_VERSION
+        value: "24"
 
 databases:
   - name: dme-order-intake-db

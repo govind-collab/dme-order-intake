@@ -10,11 +10,13 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request, Response, status
 from fastapi.exceptions import RequestValidationError
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 from starlette.formparsers import MultiPartParser
 
+from app.config import settings
 from app.db import DbSession, migrate_database
 from app.errors import UploadRejected
 from app.routers import auth, orders
@@ -37,6 +39,14 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
 app = FastAPI(title="DME order intake", lifespan=lifespan)
 app.add_middleware(UploadSizeLimit)
+if settings.frontend_origin:
+    # Added last so it wraps everything else and error responses carry CORS headers too
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=[settings.frontend_origin],
+        allow_methods=["GET", "POST", "PATCH", "DELETE"],
+        allow_headers=["Authorization", "Content-Type"],
+    )
 app.include_router(auth.router)
 app.include_router(orders.router)
 

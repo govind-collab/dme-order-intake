@@ -21,6 +21,8 @@ Migrations run when the app starts. A database made before migrations existed is
 
 Settings come from environment variables. For local runs, copy `.env.example` to `.env` and fill it in by hand. `JWT_SECRET` needs 32+ characters: `python -c "import secrets; print(secrets.token_urlsafe(32))"`.
 
+Frontend (React, TypeScript, Vite, Node 24), from `frontend/`: `npm ci`, `npm run dev` (talks to the API at `VITE_API_URL`, default `http://127.0.0.1:8000`; set the API's `FRONTEND_ORIGIN=http://localhost:5173` for CORS), `npm run lint`, `npm run typecheck`, `npm test`, `npm run build`.
+
 ## Code rules
 
 - Small functions that do one thing. Names say what the thing is.
@@ -33,6 +35,7 @@ Settings come from environment variables. For local runs, copy `.env.example` to
 - Column types stay portable: SQLite locally and in tests, Postgres on Render, both through `DATABASE_URL`.
 - Change only what the current step needs. Ask before adding anything the plan doesn't have.
 - Every step ends with ruff and pytest passing, then a commit with a plain one-line message and no trailers, then a push.
+- Frontend: the same ideas apply. No UI library, plain CSS, no `any`. All API calls go through the typed client in `src/api.ts`; components stay small. A TSDoc comment above every exported component, hook and function says what it does, and props are documented on the props type where the name isn't enough. Vitest covers the parts with logic, not the markup. Lint, typecheck, tests and build pass before a commit.
 
 ## Security and data rules
 
@@ -46,3 +49,4 @@ Settings come from environment variables. For local runs, copy `.env.example` to
 - Secrets live only in env vars: `.env` locally, the Render dashboard in production. Never read `.env`. Never put a secret in code, commits, logs or chat.
 - Passwords are hashed with argon2. JWTs expire after 60 minutes.
 - This deployment takes synthetic data only. There is no BAA with Render or Anthropic.
+- The frontend keeps the token in memory only. Nothing with patient data goes in localStorage, sessionStorage or the console (ESLint forbids `console`). The API allows only `FRONTEND_ORIGIN` through CORS.

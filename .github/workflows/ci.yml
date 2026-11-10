@@ -8,7 +8,7 @@ permissions:
   contents: read
 
 jobs:
-  check:
+  api:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -19,3 +19,19 @@ jobs:
       - run: ruff check .
       - run: ruff format --check .
       - run: pytest
+
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build

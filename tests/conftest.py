@@ -18,6 +18,7 @@ os.environ["DATABASE_URL"] = f"sqlite:///{Path(tempfile.mkdtemp()).as_posix()}/t
 os.environ["JWT_SECRET"] = "test-only-secret-that-is-at-least-32-characters"
 # Environment variables beat .env, so the real API key never reaches the test process
 os.environ["ANTHROPIC_API_KEY"] = "test-key-not-real"
+os.environ["FRONTEND_ORIGIN"] = "https://review.example.test"
 
 from app.db import engine  # noqa: E402
 from app.main import app  # noqa: E402
