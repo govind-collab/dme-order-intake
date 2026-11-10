@@ -158,3 +158,16 @@ If we run behind, cut in this order: the generated test PDF, then the quota, the
 - **Refresh tokens, password reset, roles, audit log, field-level encryption:** needed in production, not for this demo.
 - **A labelled evaluation set and Docker:** no time. The README will say accuracy is only spot-checked.
 - **Line items and diagnosis codes:** not asked for.
+
+## Decisions
+
+What was decided while building, why, and the option not taken.
+
+- **Strict storage.** A value that fails a check is never stored; the value as read and the reason go in `field_report`. A wrong value means a denied claim, so a null with a reason forces review. The other option was storing it with a warning flag: friendlier to made-up test data, but downstream code could use a bad value.
+- **One model call per PDF, no OCR engine.** Claude receives each page as an image plus its text layer, so it reads scans and handwriting, and it sees the whole document at once to tell the prescriber from other providers. The other option was OCR (Tesseract) feeding a text model or rules: an extra system dependency, weaker on fax noise, and it loses the layout.
+- **Synchronous upload, no queue.** An upload takes 5 to 10 seconds, which fits in one request and keeps the code small. The other option was a background job with status polling, which is needed at volume or for very long documents.
+- **The PDF is not kept.** Only its SHA-256 and page count are stored, so no document full of PHI sits at rest. The other option was encrypted object storage with a retention limit, so a reviewer could compare against the source.
+- **SQLite locally, Postgres on Render.** Both go through `DATABASE_URL` with portable column types, so tests run fast and offline. The other option was Postgres in Docker for tests: closer to production, but Docker wasn't available here.
+- **Migrations on start, with a stamp.** The single process runs Alembic in one transaction when it starts. The live database, created by `create_all` before migrations existed, was stamped at `0001` instead of being rebuilt. The other option was a separate migration step before each deploy, which is safer with several instances but unnecessary with one.
+- **Token in memory on the frontend.** Nothing in browser storage can be read by injected script or left on a shared machine; the cost is that a reload signs the user out. The other option was an httpOnly cookie session, which needs CSRF protection and cookie setup across two domains.
+- **A separate static site for the frontend.** A frontend build can never break the API deploy, and the site is served from Render's CDN for free. The other option was serving the built app from FastAPI: one URL and no CORS, but the two deploys are coupled.
