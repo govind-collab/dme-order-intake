@@ -1,8 +1,10 @@
+anthropic==2.8.0
 argon2-cffi==25.1.0
 fastapi==0.162.4
 psycopg[binary]==3.3.8
 pydantic-settings==2.16.2
 pyjwt==2.15.1
+pypdf==7.0.1
 python-multipart==0.0.33
 sqlalchemy==2.1.8
 uvicorn==0.54.0

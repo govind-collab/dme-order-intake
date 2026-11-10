@@ -1,10 +1,12 @@
+import hashlib
 import uuid
+from typing import Any
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.models import Order, OrderSource, OrderStatus
-from app.schemas import OrderInput
+from app.models import FieldStatus, Order, OrderSource, OrderStatus
+from app.schemas import FieldReport, OrderInput
 
 ORDER_FIELDS = tuple(OrderInput.model_fields)
 
@@ -15,12 +17,35 @@ def order_status(order: Order) -> OrderStatus:
     return OrderStatus.NEEDS_REVIEW
 
 
-def create_order(db: Session, owner_id: uuid.UUID, values: OrderInput) -> Order:
-    order = Order(owner_id=owner_id, source=OrderSource.MANUAL, **values.model_dump())
+def save_new_order(db: Session, order: Order) -> Order:
     order.status = order_status(order)
     db.add(order)
     db.commit()
     return order
+
+
+def create_order(db: Session, owner_id: uuid.UUID, values: OrderInput) -> Order:
+    order = Order(owner_id=owner_id, source=OrderSource.MANUAL, **values.model_dump())
+    return save_new_order(db, order)
+
+
+def create_uploaded_order(
+    db: Session,
+    owner_id: uuid.UUID,
+    values: dict[str, Any],
+    reports: dict[str, FieldReport],
+    pdf: bytes,
+    pages: int,
+) -> Order:
+    order = Order(
+        owner_id=owner_id,
+        source=OrderSource.UPLOAD,
+        field_report={field: report.model_dump(mode="json") for field, report in reports.items()},
+        document_sha256=hashlib.sha256(pdf).hexdigest(),
+        document_pages=pages,
+        **values,
+    )
+    return save_new_order(db, order)
 
 
 def list_orders(
@@ -38,8 +63,18 @@ def get_owned_order(db: Session, owner_id: uuid.UUID, order_id: uuid.UUID) -> Or
 
 
 def update_order(db: Session, order: Order, changes: OrderInput) -> Order:
+    reports = dict(order.field_report or {})
     for field, value in changes.model_dump(exclude_unset=True).items():
         setattr(order, field, value)
+        if field in reports:
+            status, reason = (
+                (FieldStatus.OK, "set by hand")
+                if value is not None
+                else (FieldStatus.MISSING, "cleared by hand")
+            )
+            reports[field] = {**reports[field], "status": status, "reason": reason}
+    if order.field_report is not None:
+        order.field_report = reports
     order.status = order_status(order)
     db.commit()
     return order

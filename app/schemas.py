@@ -1,12 +1,12 @@
 import uuid
 from collections.abc import Callable
 from datetime import date, datetime
-from typing import Annotated, Any
+from typing import Annotated
 
 from pydantic import AfterValidator, BaseModel, ConfigDict, StringConstraints
 
 from app.checks import dob_problem, name_problem, npi_problem
-from app.models import OrderSource, OrderStatus
+from app.models import FieldStatus, OrderSource, OrderStatus
 
 
 def rejected_by[T](problem: Callable[[T], str | None]) -> AfterValidator:
@@ -63,6 +63,14 @@ class OrderInput(BaseModel):
     provider_npi: Npi | None = None
 
 
+class FieldReport(BaseModel):
+    status: FieldStatus
+    value_as_read: str | None
+    reason: str | None
+    page: int | None
+    quote: str | None
+
+
 class OrderRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -74,6 +82,6 @@ class OrderRead(BaseModel):
     patient_dob: date | None
     provider_name: str | None
     provider_npi: str | None
-    field_report: dict[str, Any] | None
+    field_report: dict[str, FieldReport] | None
     created_at: datetime
     updated_at: datetime

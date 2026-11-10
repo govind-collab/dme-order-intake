@@ -2,7 +2,7 @@ import re
 from datetime import date
 
 MAX_AGE_YEARS = 130
-NAME_PUNCTUATION = frozenset(" '-.,")
+NAME_PUNCTUATION = frozenset(" '‘’-.,")
 PLACEHOLDER_NAMES = frozenset(
     {"unknown", "none", "null", "na", "tbd", "name", "patient", "provider", "physician", "doctor"}
 )

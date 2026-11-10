@@ -44,7 +44,9 @@ def test_implausible_dates_of_birth_are_rejected(dob: date, reason: str) -> None
     assert problem is not None and reason in problem
 
 
-@pytest.mark.parametrize("name", ["Ada", "O'Brien-Smith", "Mary Ann", "José", "Raj, Arjun D.P.M."])
+@pytest.mark.parametrize(
+    "name", ["Ada", "O'Brien-Smith", "O’Brien", "D‘Angelo", "Mary Ann", "José", "Raj, Arjun D.P.M."]
+)
 def test_real_names_pass(name: str) -> None:
     assert name_problem(name) is None
 

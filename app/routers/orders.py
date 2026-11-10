@@ -1,13 +1,14 @@
 import uuid
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, status
 
 from app.db import DbSession
-from app.deps import CurrentUser
+from app.deps import CurrentUser, get_extractor
+from app.extractor import Extractor
 from app.models import Order, OrderStatus
 from app.schemas import OrderInput, OrderRead
-from app.services import orders
+from app.services import intake, orders
 
 router = APIRouter(prefix="/orders", tags=["orders"])
 
@@ -25,6 +26,17 @@ OwnedOrder = Annotated[Order, Depends(owned_order)]
 @router.post("", status_code=status.HTTP_201_CREATED)
 def create_order(body: OrderInput, user: CurrentUser, db: DbSession) -> OrderRead:
     return OrderRead.model_validate(orders.create_order(db, user.id, body))
+
+
+@router.post("/upload", status_code=status.HTTP_201_CREATED)
+def upload_order(
+    file: UploadFile,
+    user: CurrentUser,
+    db: DbSession,
+    extract: Annotated[Extractor, Depends(get_extractor)],
+) -> OrderRead:
+    order = intake.create_order_from_pdf(db, user.id, file.file.read(), extract)
+    return OrderRead.model_validate(order)
 
 
 @router.get("")

@@ -21,6 +21,13 @@ class OrderSource(StrEnum):
     UPLOAD = "upload"
 
 
+class FieldStatus(StrEnum):
+    OK = "ok"
+    MISSING = "missing"
+    INVALID = "invalid"
+    CONFLICT = "conflict"
+
+
 class Base(DeclarativeBase):
     pass
 
