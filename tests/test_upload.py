@@ -150,7 +150,17 @@ def test_unusable_reading_is_not_stored(
 
 
 @pytest.mark.parametrize(
-    "printed", ["12/10/1985", "12-10-1985", "12.10.1985", "1985-12-10", "December 10, 1985"]
+    "printed",
+    [
+        "12/10/1985",
+        "12-10-1985",
+        "12.10.1985",
+        "1985-12-10",
+        "December 10, 1985",
+        "10-Dec-1985",
+        "10-DEC-1985",
+        "10-December-1985",
+    ],
 )
 def test_printed_dates_of_birth_are_parsed_as_us_dates(
     client: TestClient, alice: Headers, printed: str
@@ -167,6 +177,7 @@ def test_printed_dates_of_birth_are_parsed_as_us_dates(
         ("12/10/85", "two-digit year is ambiguous"),
         ("02/30/1985", "not a real calendar date"),
         ("sometime in 1985", "date format is not recognised"),
+        ("10-Dec-85", "date format is not recognised"),
         ("12/10/2999", "date of birth is in the future"),
         ("12/10/1850", "date of birth is more than 130 years ago"),
     ],

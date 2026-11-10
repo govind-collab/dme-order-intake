@@ -27,7 +27,16 @@ MAX_PDF_PAGES = 50
 DAILY_UPLOAD_LIMIT = 100
 ISO_DATE = re.compile(r"(\d{4})-(\d{1,2})-(\d{1,2})")
 US_DATE = re.compile(r"(\d{1,2})[/.-](\d{1,2})[/.-](\d{2}|\d{4})")
-WRITTEN_DATE_FORMATS = ("%B %d, %Y", "%b %d, %Y", "%B %d %Y", "%b %d %Y", "%d %B %Y", "%d %b %Y")
+WRITTEN_DATE_FORMATS = (
+    "%B %d, %Y",
+    "%b %d, %Y",
+    "%B %d %Y",
+    "%b %d %Y",
+    "%d %B %Y",
+    "%d %b %Y",
+    "%d-%b-%Y",
+    "%d-%B-%Y",
+)
 # The same validators as manual orders, so a value is checked the same way however it arrives
 FIELD_TYPES = {
     field: TypeAdapter(info.annotation) for field, info in OrderInput.model_fields.items()

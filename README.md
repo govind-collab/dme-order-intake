@@ -71,7 +71,7 @@ curl -s -o /dev/null -w "%{http_code}\n" -X DELETE "$API/orders/$ID" -H "Authori
 |---|---|
 | Patient first and last name | Letters in any alphabet, spaces, hyphens, apostrophes (straight or curly, as scans produce), periods and commas. Not a placeholder like "unknown". At most 100 characters. |
 | Provider name | The same rules, at most 200 characters. The model leaves out credentials such as MD or DPM. |
-| Date of birth | Read as printed. Numeric dates are US month/day/year. A two-digit year is refused instead of guessing the century. It must be a real date, not in the future and not more than 130 years ago. |
+| Date of birth | Read as printed. Numeric dates are US month/day/year; written months such as `December 10, 1985` or `10-Dec-1985` are read too. A two-digit year is refused instead of guessing the century. It must be a real date, not in the future and not more than 130 years ago. |
 | NPI | 10 digits once spaces and hyphens are removed, starting with 1 or 2, with a valid check digit (Luhn with the 80840 prefix). |
 
 | Field status | Meaning | Stored on the order |
